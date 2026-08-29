@@ -1,0 +1,6 @@
+{
+  "name": "GLEAN Insights",
+  "description": "Observability, ML anomaly detection, topology correlation, structured root cause analysis, explainable AI diagnosis, and human-approved remediation for microservices.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

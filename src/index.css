@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+@theme {
+  /* Off-White Refined Color System */
+  --color-offwhite-canvas: #F8F9FA;
+  --color-offwhite-panel: #FFFFFF;
+  --color-offwhite-muted: #F1F5F9;
+  --color-offwhite-border: #E2E8F0;
+  --color-offwhite-border-strong: #CBD5E1;
+
+  /* Metallic Slate Accents for Off-White Mode */
+  --color-slate-50: #F8FAFC;
+  --color-slate-100: #F1F5F9;
+  --color-slate-200: #E2E8F0;
+  --color-slate-300: #CBD5E1;
+  --color-slate-400: #94A3B8;
+  --color-slate-500: #64748B;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1E293B;
+  --color-slate-900: #0F172A;
+  --color-slate-950: #020617;
+}
+
+:root {
+  --bg-canvas: #F8F9FA;
+  --bg-surface: #FFFFFF;
+  --bg-surface-raised: #F1F5F9;
+  --border-subtle: #E2E8F0;
+  --border-strong: #CBD5E1;
+}
+
+body {
+  background-color: #F8F9FA;
+  color: #1E293B;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  background-image: 
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(203, 213, 225, 0.35), transparent),
+    linear-gradient(180deg, #FAFAFC 0%, #F4F5F7 100%);
+  background-attachment: fixed;
+}
+
+/* Custom Scrollbar for Off-White Theme */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F1F5F9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 3px;
+  border: 1px solid #E2E8F0;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
