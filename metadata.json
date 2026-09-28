@@ -1,0 +1,6 @@
+{
+  "name": "Glean Insights",
+  "description": "Microservice observability, ML anomaly detection, topology correlation, and evidence-grounded RCA.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

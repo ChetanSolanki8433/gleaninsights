@@ -1,0 +1,113 @@
+@import "tailwindcss";
+
+@theme {
+  /* Colors - Scientific Field Journal on Warm Parchment */
+  --color-slate-dark: #141413;
+  --color-ivory-medium: #f0eee6;
+  --color-ivory-light: #faf9f5;
+  --color-cloud-medium: #b0aea5;
+  --color-cloud-dark: #87867f;
+  --color-stone: #cccbc8;
+  --color-slate-medium: #3d3d3a;
+  --color-oat-warm: #e3dacc;
+  --color-manilla: #f5e3c7;
+  --color-clay: #d97757;
+  --color-clay-deep: #c6613f;
+
+  /* Typography */
+  --font-serif: 'Newsreader', 'Anthropic Serif', Georgia, Cambria, 'Times New Roman', serif;
+  --font-sans: 'Anthropic Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Anthropic Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Radius tokens */
+  --radius-cards: 24px;
+  --radius-buttons: 8px;
+}
+
+:root {
+  --color-slate-dark: #141413;
+  --color-ivory-medium: #f0eee6;
+  --color-ivory-light: #faf9f5;
+  --color-cloud-medium: #b0aea5;
+  --color-cloud-dark: #87867f;
+  --color-stone: #cccbc8;
+  --color-slate-medium: #3d3d3a;
+  --color-oat-warm: #e3dacc;
+  --color-manilla: #f5e3c7;
+  --color-clay: #d97757;
+  --color-clay-deep: #c6613f;
+
+  --surface-canvas: #f0eee6;
+  --surface-card-surface: #faf9f5;
+  --surface-warm-feature: #f5e3c7;
+  --surface-deep-warm: #e3dacc;
+  --surface-inversion: #141413;
+}
+
+body {
+  background-color: #f0eee6;
+  color: #141413;
+  font-family: 'Anthropic Sans', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Warm Parchment Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f0eee6;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cccbc8;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #87867f;
+}
+
+/* Cross-browser subtle and hidden scrollbars */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.subtle-scroll::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.subtle-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.subtle-scroll::-webkit-scrollbar-thumb {
+  background: #cccbc8;
+  border-radius: 4px;
+}
+.subtle-scroll::-webkit-scrollbar-thumb:hover {
+  background: #87867f;
+}
+
+/* Print editorial link style with persistent underline */
+.editorial-link {
+  text-decoration: underline;
+  text-decoration-color: #141413;
+  text-underline-offset: 3px;
+}
+
+/* Signature bottom-only radius on filled actions */
+.btn-tab-cut {
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
+  border-top-left-radius: 0px;
+  border-top-right-radius: 0px;
+}
