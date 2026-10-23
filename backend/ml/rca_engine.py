@@ -51,11 +51,18 @@ KNOWN_FAULT_SIGNATURES = [
         "score_boost": 95.0
     },
     {
-        "signature": "Service Container Crash & Process Termination (SIGSEGV / OOMKill)",
+        "signature": "SIG-PROC-CRASH: Service Container Crash & Process Termination (SIGSEGV / OOMKill)",
         "service": "payment-service",
-        "metric_pattern": lambda m: m.get("error_rate_percent", 0) > 60,
-        "log_keyword": "CRASH",
+        "metric_pattern": lambda m: m.get("status") == "crashed" or m.get("restart_count", 0) > 0 or m.get("error_rate_percent", 0) >= 60,
+        "log_keyword": "crash",
         "score_boost": 98.0
+    },
+    {
+        "signature": "SIG-CASCADE-ORIGIN: Upstream Overload & Retry Storm Propagating Cascade",
+        "service": "order-service",
+        "metric_pattern": lambda m: (m.get("queue_backlog", 0) > 300 or m.get("latency_p95_ms", 0) > 1500) and m.get("error_rate_percent", 0) > 15,
+        "log_keyword": "cascade",
+        "score_boost": 96.0
     },
     {
         "signature": "Redis Cache Eviction Surge & Network Latency Delay",
@@ -151,27 +158,42 @@ class DeterministicRcaEngine:
                 min(1.0, err_val / 20.0) * 10.0 +
                 min(1.0, mem_mb / 900.0) * 10.0
             ))
+            # Critical status / process crash / restarts heavily boost metric evidence
+            if svc.get("status") == "crashed" or metrics.get("status") == "crashed" or metrics.get("restart_count", 0) > 0 or (err_val >= 90.0 and cpu_val < 5.0):
+                metric_evidence = max(metric_evidence, 98.0)
 
             # 2. Dependency Impact Score (0-100)
-            # Services that have many callers that are degraded get higher causal weight
+            # Services that have connected dependencies that are degraded get higher causal weight
             downstream = self._get_downstream_dependents(svc_id)
             upstream = self._get_upstream_dependencies(svc_id)
-            dep_score = 40.0
-            if downstream:
-                dep_score += min(50.0, len(downstream) * 25.0)
-            if svc.get("status") in ["critical", "crashed"]:
-                dep_score += 10.0
+            connected_anomalous = sum(1 for neighbor in (downstream + upstream) if neighbor in anomalies_by_service and anomalies_by_service[neighbor])
+            dep_score = 40.0 + min(45.0, connected_anomalous * 20.0)
+            if svc.get("status") in ["critical", "crashed"] or metrics.get("status") in ["critical", "crashed"]:
+                dep_score += 15.0
             dependency_impact = min(100.0, dep_score)
 
             # 3. Temporal Precedence Score (0-100)
-            # Earliest anomaly gets highest precedence
-            temporal_score = 30.0
+            # Earliest anomaly gets highest precedence; followers receive scaled lower scores
+            temporal_score = 25.0
             if svc_anomalies:
-                temporal_score = 85.0
-                # Check if this service had the earliest anomaly in the cluster
-                earliest_svc = min(recent_anomalies, key=lambda x: x.get("detected_at", datetime.datetime.max), default=None)
-                if earliest_svc and earliest_svc.get("service_id") == svc_id:
-                    temporal_score = 98.0
+                earliest_cluster = min(recent_anomalies, key=lambda x: x.get("detected_at", datetime.datetime.max), default=None)
+                earliest_this = min(svc_anomalies, key=lambda x: x.get("detected_at", datetime.datetime.max), default=None)
+                if earliest_cluster and earliest_this:
+                    t_cluster = earliest_cluster.get("detected_at")
+                    t_svc = earliest_this.get("detected_at")
+                    if isinstance(t_cluster, datetime.datetime) and isinstance(t_svc, datetime.datetime):
+                        delta_sec = abs((t_svc - t_cluster).total_seconds())
+                    else:
+                        delta_sec = 0.0
+                    
+                    if delta_sec < 0.2:
+                        temporal_score = 98.0
+                    elif delta_sec < 2.5:
+                        temporal_score = 65.0
+                    else:
+                        temporal_score = 35.0
+                else:
+                    temporal_score = 80.0
             temporal_precedence = temporal_score
 
             # 4. Log Evidence Score (0-100)
@@ -184,17 +206,21 @@ class DeterministicRcaEngine:
             # 5. Fault Signature Match Score (0-100)
             matched_signature_name = "Generic Service Latency Congestion"
             signature_score = 25.0
-            for sig in KNOWN_FAULT_SIGNATURES:
-                if sig["service"] == svc_id:
-                    if sig["metric_pattern"](metrics):
-                        signature_score = sig["score_boost"]
-                        matched_signature_name = sig["signature"]
-                        break
-                    # Also check logs
-                    for l in critical_logs:
-                        if sig["log_keyword"].lower() in l.get("message", "").lower():
-                            signature_score = max(signature_score, sig["score_boost"] - 5.0)
+            if svc.get("status") == "crashed" or metrics.get("status") == "crashed" or metrics.get("restart_count", 0) > 0:
+                signature_score = 98.0
+                matched_signature_name = "SIG-PROC-CRASH: Service Container Crash & Process Termination (SIGSEGV / OOMKill)"
+            else:
+                for sig in KNOWN_FAULT_SIGNATURES:
+                    if sig["service"] == svc_id:
+                        if sig["metric_pattern"](metrics):
+                            signature_score = sig["score_boost"]
                             matched_signature_name = sig["signature"]
+                            break
+                        # Also check logs
+                        for l in critical_logs:
+                            if sig["log_keyword"].lower() in l.get("message", "").lower():
+                                signature_score = max(signature_score, sig["score_boost"] - 5.0)
+                                matched_signature_name = sig["signature"]
 
             fault_signature = signature_score
 

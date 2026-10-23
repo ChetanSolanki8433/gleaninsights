@@ -112,7 +112,7 @@ export function executeStructuredRca(
   anomalies: AnomalyRecord[],
   scenario: FaultScenarioType
 ): { candidates: RcaCandidate[]; recommendations: RemediationRecommendation[] } {
-  if (scenario === 'normal' || !incident) {
+  if (!incident) {
     return { candidates: [], recommendations: [] };
   }
 
@@ -218,36 +218,35 @@ export function executeStructuredRca(
       logEvidence = 10;
     }
 
-    // 5. Fault Signature (0 - 100)
-    if (scenario === 'cpu_saturation_order' && srv.id === 'order-service') {
-      faultSignature = 96;
-      faultSignatureMatched = 'SIG-CPU-SATURATION: Elevated CPU (96%) + Latency spike + Thread pool queue saturation';
-    } else if (scenario === 'memory_leak_user' && srv.id === 'user-service') {
-      faultSignature = 98;
-      faultSignatureMatched = 'SIG-MEM-LEAK: Monotonic heap growth + GC pauses exceeding 300ms + Near-OOM';
-    } else if (scenario === 'database_latency_order' && (srv.id === 'order-service' || srv.id === 'inventory-service')) {
-      faultSignature = srv.id === 'order-service' ? 95 : 65;
-      faultSignatureMatched = 'SIG-DB-SLOW-QUERY: PostgreSQL query latency > 1500ms on unindexed table scan';
-    } else if (scenario === 'db_connection_exhaustion' && srv.id === 'payment-service') {
-      faultSignature = 97;
-      faultSignatureMatched = 'SIG-DB-POOL-LEAK: Active connections pegged at 98% pool ceiling + timeout exceptions';
-    } else if (scenario === 'service_crash_payment' && srv.id === 'payment-service') {
+    // 5. Fault Signature (0 - 100) — derived ONLY from metric/log evidence, NOT scenario label
+    const m2 = srv.currentMetrics;
+    if (m2.cpuPercent > 85 && m2.latencyP95Ms > 500) {
+      faultSignature = Math.min(98, Math.round(m2.cpuPercent));
+      faultSignatureMatched = 'SIG-CPU-SATURATION: Elevated CPU + Latency spike + Thread pool queue saturation';
+    } else if (m2.memoryMb / (m2.memoryMaxMb || 1024) > 0.85) {
+      faultSignature = Math.min(98, Math.round((m2.memoryMb / (m2.memoryMaxMb || 1024)) * 100));
+      faultSignatureMatched = 'SIG-MEM-LEAK: Monotonic heap growth + GC pauses + Near-OOM';
+    } else if (m2.dbQueryLatencyMs > 500) {
+      faultSignature = Math.min(96, Math.round(Math.min(100, m2.dbQueryLatencyMs / 20)));
+      faultSignatureMatched = 'SIG-DB-SLOW-QUERY: Elevated DB query latency suggesting unindexed table scan';
+    } else if (m2.dbConnectionsActive / (m2.dbConnectionsMax || 50) > 0.90) {
+      faultSignature = Math.min(97, Math.round((m2.dbConnectionsActive / (m2.dbConnectionsMax || 50)) * 100));
+      faultSignatureMatched = 'SIG-DB-POOL-LEAK: Active connections near pool ceiling + timeout exceptions';
+    } else if (srv.status === 'crashed' || m2.restartCount > 0 || (m2.errorRatePercent > 50 && m2.cpuPercent < 15)) {
       faultSignature = 100;
       faultSignatureMatched = 'SIG-PROC-CRASH: Process exit / zero health probe + 503 response flood';
-    } else if (scenario === 'network_latency_inventory' && srv.id === 'inventory-service') {
-      faultSignature = 94;
-      faultSignatureMatched = 'SIG-NET-DELAY: Elevated roundtrip latency (1200ms) with normal local host CPU (18%)';
-    } else if (scenario === 'slow_payment_gateway' && srv.id === 'payment-service') {
+    } else if (m2.queueBacklog && m2.queueBacklog > 300) {
       faultSignature = 96;
-      faultSignatureMatched = 'SIG-EXT-GW-TIMEOUT: Downstream third-party payment partner clearing latency > 4000ms';
-    } else if (scenario === 'cascading_failure_chain') {
-      if (srv.id === 'order-service') {
-        faultSignature = 94;
-        faultSignatureMatched = 'SIG-CASCADE-ORIGIN: Upstream retry storm initiation';
-      } else {
-        faultSignature = 70;
-        faultSignatureMatched = 'SIG-CASCADE-VICTIM: Downstream queue exhaustion via propagated retry load';
-      }
+      faultSignatureMatched = 'SIG-CASCADE-ORIGIN: Upstream queue saturation & unthrottled retry storm propagation';
+    } else if (m2.latencyP95Ms > 1000 && m2.cpuPercent < 40) {
+      faultSignature = Math.min(96, Math.round(Math.min(100, m2.latencyP95Ms / 50)));
+      faultSignatureMatched = 'SIG-NET-DELAY: Elevated roundtrip latency with normal local host CPU';
+    } else if (m2.latencyP95Ms > 2000 && m2.errorRatePercent > 15) {
+      faultSignature = Math.min(96, Math.round(Math.min(100, m2.latencyP95Ms / 50)));
+      faultSignatureMatched = 'SIG-EXT-GW-TIMEOUT: Downstream third-party gateway clearing latency';
+    } else if (metricEvidence > 40) {
+      faultSignature = Math.max(40, Math.floor(metricEvidence * 0.7));
+      faultSignatureMatched = `SIG-MULTI-FACTOR: Elevated multi-metric correlation signature`;
     } else {
       faultSignature = Math.max(10, Math.floor(metricEvidence * 0.4));
     }
@@ -297,7 +296,8 @@ export function executeStructuredRca(
   const recommendations: RemediationRecommendation[] = [];
   if (candidates.length > 0) {
     const topCandidate = candidates[0];
-    const matchingPlaybook = findPlaybookForScenario(scenario, topCandidate.candidateServiceId);
+    const matchingPlaybook = findPlaybookForCandidate(topCandidate.candidateServiceId, 
+      services.find(s => s.id === topCandidate.candidateServiceId)?.currentMetrics || {} as any);
     if (matchingPlaybook) {
       recommendations.push({
         id: `rec-${matchingPlaybook.id}-${incident.id}`,
@@ -321,25 +321,24 @@ export function executeStructuredRca(
   return { candidates, recommendations };
 }
 
-function findPlaybookForScenario(scenario: FaultScenarioType, serviceId: string): RemediationPlaybook | undefined {
-  switch (scenario) {
-    case 'cpu_saturation_order':
-      return REMEDIATION_PLAYBOOKS.find((p) => p.id === 'pb-cpu-scale');
-    case 'memory_leak_user':
-      return REMEDIATION_PLAYBOOKS.find((p) => p.id === 'pb-mem-restart');
-    case 'database_latency_order':
-      return REMEDIATION_PLAYBOOKS.find((p) => p.id === 'pb-db-index');
-    case 'db_connection_exhaustion':
-      return REMEDIATION_PLAYBOOKS.find((p) => p.id === 'pb-pool-resize');
-    case 'service_crash_payment':
-      return REMEDIATION_PLAYBOOKS.find((p) => p.id === 'pb-crash-recover');
-    case 'network_latency_inventory':
-      return REMEDIATION_PLAYBOOKS.find((p) => p.id === 'pb-net-cache');
-    case 'slow_payment_gateway':
-      return REMEDIATION_PLAYBOOKS.find((p) => p.id === 'pb-gateway-breaker');
-    case 'cascading_failure_chain':
-      return REMEDIATION_PLAYBOOKS.find((p) => p.id === 'pb-cascade-throttle');
-    default:
-      return REMEDIATION_PLAYBOOKS[0];
+function findPlaybookForCandidate(candidateServiceId: string, metrics: Microservice['currentMetrics']): RemediationPlaybook | undefined {
+  if (metrics.cpuPercent > 85 && metrics.latencyP95Ms > 500) {
+    return REMEDIATION_PLAYBOOKS.find((p) => p.id === 'pb-cpu-scale');
+  } else if (metrics.memoryMb / (metrics.memoryMaxMb || 1024) > 0.85) {
+    return REMEDIATION_PLAYBOOKS.find((p) => p.id === 'pb-mem-restart');
+  } else if (metrics.dbQueryLatencyMs > 500) {
+    return REMEDIATION_PLAYBOOKS.find((p) => p.id === 'pb-db-index');
+  } else if (metrics.dbConnectionsActive / (metrics.dbConnectionsMax || 50) > 0.90) {
+    return REMEDIATION_PLAYBOOKS.find((p) => p.id === 'pb-pool-resize');
+  } else if (metrics.errorRatePercent > 50 || metrics.restartCount > 0) {
+    return REMEDIATION_PLAYBOOKS.find((p) => p.id === 'pb-crash-recover');
+  } else if (metrics.queueBacklog && metrics.queueBacklog > 300) {
+    return REMEDIATION_PLAYBOOKS.find((p) => p.id === 'pb-cascade-throttle');
+  } else if (metrics.latencyP95Ms > 1000 && metrics.cpuPercent < 40) {
+    return REMEDIATION_PLAYBOOKS.find((p) => p.id === 'pb-net-cache');
+  } else if (metrics.latencyP95Ms > 2000 && metrics.errorRatePercent > 15) {
+    return REMEDIATION_PLAYBOOKS.find((p) => p.id === 'pb-gateway-breaker');
+  } else {
+    return REMEDIATION_PLAYBOOKS[0]; // Default to first available
   }
 }

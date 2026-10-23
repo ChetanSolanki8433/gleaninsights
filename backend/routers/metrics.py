@@ -13,6 +13,7 @@ from backend.schemas import (
 )
 from backend.ml.anomaly_detector import anomaly_detector
 from backend.collectors.system_collector import system_collector
+from backend.services.incident_engine import incident_engine
 
 router = APIRouter(prefix="/api/v1/metrics", tags=["Telemetry Metrics"])
 
@@ -72,6 +73,10 @@ def ingest_metrics(
             db.add(anomaly_rec)
 
     db.commit()
+
+    # Automatically evaluate incident threshold and trigger RCA if anomalies accumulated
+    incident_engine.check_for_incidents(db)
+
     for r in saved_records:
         db.refresh(r)
 

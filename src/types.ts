@@ -24,7 +24,7 @@ export interface IncidentLifecycleEvent {
   timestampMs: number;
   description: string;
   status: 'completed' | 'in_progress' | 'pending';
-  actor?: 'ML Anomaly Detector' | 'RCA Engine' | 'Gemini AI' | 'SRE Operator' | 'Automator' | 'Closed-Loop Verifier';
+  actor?: 'ML Anomaly Detector' | 'RCA Engine' | 'Diagnosis Engine' | 'SRE Operator' | 'Automator' | 'Closed-Loop Verifier';
 }
 
 export interface OperatorComment {
@@ -254,9 +254,11 @@ export type FaultScenarioType =
   | 'memory_leak_user'
   | 'database_latency_order'
   | 'db_connection_exhaustion'
+  | 'service_crash'
   | 'service_crash_payment'
   | 'network_latency_inventory'
   | 'slow_payment_gateway'
+  | 'dependency_cascade'
   | 'cascading_failure_chain';
 
 export type ScenarioType = FaultScenarioType;

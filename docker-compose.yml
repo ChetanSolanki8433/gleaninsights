@@ -1,49 +1,198 @@
-version: '3.8'
+version: "3.9"
 
 services:
-  aiops-backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: aiops-fastapi-backend
+  # ========================================================
+  # 1. Database & Observability Infrastructure
+  # ========================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: glean-insights-postgres
     ports:
-      - "8000:8000"
+      - "5432:5432"
     environment:
-      - DATABASE_URL=sqlite:///./aiops.db
-      - PROMETHEUS_URL=http://prometheus:9090
-      - NODE_ENV=production
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: glean_insights
     volumes:
-      - aiops_data:/app/data
-    restart: unless-stopped
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
-      interval: 15s
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
       timeout: 5s
-      retries: 3
-
-  aiops-frontend:
-    image: node:20-alpine
-    container_name: aiops-web-ui
-    working_dir: /app
-    ports:
-      - "3000:3000"
-    volumes:
-      - .:/app
-    command: sh -c "npm install && npm run dev"
-    environment:
-      - BACKEND_URL=http://aiops-backend:8000
-    depends_on:
-      - aiops-backend
-    restart: unless-stopped
+      retries: 5
 
   prometheus:
     image: prom/prometheus:latest
-    container_name: aiops-prometheus
+    container_name: glean-insights-prometheus
     ports:
       - "9090:9090"
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    restart: unless-stopped
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      - user-service
+      - order-service
+      - payment-service
+      - inventory-service
+      - notification-service
+
+  # ========================================================
+  # 2. Real Telemetry Lab Microservices (FastAPI)
+  # ========================================================
+  user-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.lab
+    container_name: lab-user-service
+    command: ["python", "-m", "uvicorn", "lab.services.user_service.main:app", "--host", "0.0.0.0", "--port", "8001"]
+    ports:
+      - "8001:8001"
+    environment:
+      - PORT=8001
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8005
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  order-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.lab
+    container_name: lab-order-service
+    command: ["python", "-m", "uvicorn", "lab.services.order_service.main:app", "--host", "0.0.0.0", "--port", "8002"]
+    ports:
+      - "8002:8002"
+    environment:
+      - PORT=8002
+      - PAYMENT_SERVICE_URL=http://payment-service:8003
+      - INVENTORY_SERVICE_URL=http://inventory-service:8004
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8005
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  payment-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.lab
+    container_name: lab-payment-service
+    command: ["python", "-m", "uvicorn", "lab.services.payment_service.main:app", "--host", "0.0.0.0", "--port", "8003"]
+    ports:
+      - "8003:8003"
+    environment:
+      - PORT=8003
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8005
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  inventory-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.lab
+    container_name: lab-inventory-service
+    command: ["python", "-m", "uvicorn", "lab.services.inventory_service.main:app", "--host", "0.0.0.0", "--port", "8004"]
+    ports:
+      - "8004:8004"
+    environment:
+      - PORT=8004
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8005
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.lab
+    container_name: lab-notification-service
+    command: ["python", "-m", "uvicorn", "lab.services.notification_service.main:app", "--host", "0.0.0.0", "--port", "8005"]
+    ports:
+      - "8005:8005"
+    environment:
+      - PORT=8005
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  # ========================================================
+  # 3. Lab Telemetry Collector (Real services -> Glean Ingestion API)
+  # ========================================================
+  lab-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile.lab
+    container_name: lab-telemetry-collector
+    command: ["python", "-m", "lab.collector.telemetry_collector"]
+    environment:
+      - GLEAN_API_URL=http://glean-backend:8000
+      - USER_SERVICE_URL=http://user-service:8001
+      - ORDER_SERVICE_URL=http://order-service:8002
+      - PAYMENT_SERVICE_URL=http://payment-service:8003
+      - INVENTORY_SERVICE_URL=http://inventory-service:8004
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8005
+    depends_on:
+      glean-backend:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+      inventory-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+
+  # ========================================================
+  # 4. Glean Insights Core Platform (Backend & Frontend)
+  # ========================================================
+  glean-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: glean-insights-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///backend/glean_insights.db
+      - PROMETHEUS_URL=http://prometheus:9090
+    volumes:
+      - ./backend:/app/backend
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  glean-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: glean-insights-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_DATA_SOURCE=api
+      - VITE_BACKEND_URL=http://glean-backend:8000
+    depends_on:
+      glean-backend:
+        condition: service_healthy
 
 volumes:
-  aiops_data:
+  postgres_data:

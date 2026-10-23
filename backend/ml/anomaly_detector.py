@@ -139,6 +139,12 @@ class LocalAnomalyDetector:
         # Scale MSE reconstruction loss (nominal is ~0.002, anomaly is >0.08)
         s_ae = float(np.clip(mse * 12.0, 0.05, 0.99))
 
+        # Extract status and restarts from metrics payload if not explicitly passed
+        if service_status == "healthy":
+            service_status = metrics.get("status") or metrics.get("service_status") or "healthy"
+        if recent_restart_count == 0:
+            recent_restart_count = metrics.get("restart_count", 0)
+
         # 3. Context Score based on service state and restarts
         s_context = 0.05
         if service_status == "degraded":

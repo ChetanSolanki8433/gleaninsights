@@ -18,6 +18,7 @@ class TelemetryMetric(Base):
     db_query_latency_ms = Column(Float, default=0.0)
     db_connections = Column(Integer, default=0)
     queue_backlog = Column(Integer, default=0)
+    restart_count = Column(Integer, default=0)
     source = Column(String(32), default="collector") # "host", "synthetic", "prometheus"
 
 
@@ -126,3 +127,32 @@ class RemediationAudit(Base):
     executed_at = Column(DateTime, nullable=True)
     verification_status = Column(String(64), default="unresolved") # verifying, verified_healthy, unresolved
     execution_logs = Column(JSON, default=[])
+
+
+class ServiceModel(Base):
+    __tablename__ = "services"
+
+    id = Column(String(64), primary_key=True, index=True)
+    name = Column(String(128), nullable=False)
+    version = Column(String(32), default="1.0.0")
+    language = Column(String(64))
+    framework = Column(String(64))
+    database = Column(String(64))
+    description = Column(Text)
+    status = Column(String(32), default="healthy")
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class DependencyModel(Base):
+    __tablename__ = "dependencies"
+
+    id = Column(String(64), primary_key=True, index=True)
+    source_service_id = Column(String(64), nullable=False, index=True)
+    source_name = Column(String(128), nullable=False)
+    target_service_id = Column(String(64), nullable=False, index=True)
+    target_name = Column(String(128), nullable=False)
+    protocol = Column(String(64), default="HTTP")
+    avg_latency_ms = Column(Float, default=10.0)
+    call_rate_per_min = Column(Integer, default=100)
+    status = Column(String(32), default="healthy")
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)

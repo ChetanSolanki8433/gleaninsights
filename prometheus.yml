@@ -3,6 +3,32 @@ global:
   evaluation_interval: 5s
 
 scrape_configs:
-  - job_name: 'aiops-platform'
+  - job_name: 'glean-backend'
     static_configs:
-      - targets: ['aiops-backend:8000', 'aiops-frontend:3000']
+      - targets: ['glean-backend:8000', 'host.docker.internal:8000', 'localhost:8000']
+    metrics_path: '/metrics'
+
+  - job_name: 'user-service'
+    static_configs:
+      - targets: ['user-service:8001', 'host.docker.internal:8001', 'localhost:8001']
+    metrics_path: '/metrics'
+
+  - job_name: 'order-service'
+    static_configs:
+      - targets: ['order-service:8002', 'host.docker.internal:8002', 'localhost:8002']
+    metrics_path: '/metrics'
+
+  - job_name: 'payment-service'
+    static_configs:
+      - targets: ['payment-service:8003', 'host.docker.internal:8003', 'localhost:8003']
+    metrics_path: '/metrics'
+
+  - job_name: 'inventory-service'
+    static_configs:
+      - targets: ['inventory-service:8004', 'host.docker.internal:8004', 'localhost:8004']
+    metrics_path: '/metrics'
+
+  - job_name: 'notification-service'
+    static_configs:
+      - targets: ['notification-service:8005', 'host.docker.internal:8005', 'localhost:8005']
+    metrics_path: '/metrics'

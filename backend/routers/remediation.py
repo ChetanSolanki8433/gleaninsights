@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from backend.database import get_db
-from backend.models import RemediationAudit, Incident
+from backend.models import RemediationAudit, Incident, TelemetryMetric
 from backend.schemas import (
     RemediationPlaybookResponse,
     RemediationApprovalRequest,
@@ -14,6 +14,7 @@ from backend.schemas import (
     RemediationAuditResponse
 )
 from backend.collectors.system_collector import system_collector
+from backend.services.synthetic_generator import synthetic_generator
 
 router = APIRouter(prefix="/api/v1/remediation", tags=["Remediation & Recovery"])
 
@@ -97,9 +98,9 @@ BUILTIN_PLAYBOOKS = [
     },
     {
         "id": "playbook-restart-crashed-payment",
-        "failureType": "service_crash_payment",
+        "failureType": "service_crash",
         "rootCauseType": "payment-service",
-        "title": "Auto-Heal Crashed Payment Container & Reset Health Probe",
+        "title": "Immediate Container Spin-up & Circuit Breaker Engagement",
         "recommendationText": "Spin up fresh payment-service container instance and reset failed circuit breakers.",
         "actionType": "restart_service",
         "category": "automated_safe",
@@ -112,6 +113,25 @@ BUILTIN_PLAYBOOKS = [
             "Deploy fresh payment-service v1.4.2 pod",
             "Execute synthetic health check probe",
             "Re-enable ingress routing"
+        ]
+    },
+    {
+        "id": "playbook-cascade-throttle",
+        "failureType": "dependency_cascade",
+        "rootCauseType": "order-service",
+        "title": "Apply Cluster Rate Limiting & Aggressive Circuit Breaking",
+        "recommendationText": "Shed 40% non-essential background traffic, disable exponential retry storms, and prioritize core user checkout paths.",
+        "actionType": "throttle_requests",
+        "category": "automated_safe",
+        "safeAutoAction": True,
+        "approvalRequired": True,
+        "priority": "P1",
+        "estimatedRecoveryTimeSec": 30,
+        "steps": [
+            "Enable token bucket rate limiting on Ingress Gateway (limit 250 req/s)",
+            "Trip retry breaker to cap max retries to 0 across inter-service HTTP calls",
+            "Divert background notifications to deferred batch queue",
+            "Verify latency drops across all downstream services"
         ]
     }
 ]
@@ -133,8 +153,46 @@ def approve_remediation(
     now = datetime.datetime.utcnow()
     audit_id = f"audit-{uuid.uuid4().hex[:10]}"
 
-    # Execute remediation recovery on host/collector
+    # Execute remediation recovery on host/collector and simulation generator
     system_collector.clear_faults()
+    synthetic_generator.reset()
+
+    # Query latest telemetry metrics to verify actual post-action state
+    target_svc_id = payload.target_service.lower().replace(" ", "-")
+    latest_metric = (
+        db.query(TelemetryMetric)
+        .filter(
+            (TelemetryMetric.service_id == target_svc_id) | 
+            (TelemetryMetric.service_name.ilike(f"%{payload.target_service}%"))
+        )
+        .order_by(desc(TelemetryMetric.timestamp))
+        .first()
+    )
+
+    verification_status = "verified_healthy"
+    metric_check_msg = "Awaiting post-action telemetry convergence..."
+
+    if latest_metric:
+        cpu_ok = latest_metric.cpu_percent < 70.0
+        latency_ok = latest_metric.latency_p95_ms < 500.0
+        error_ok = latest_metric.error_rate_percent < 5.0
+        
+        if cpu_ok and latency_ok and error_ok:
+            verification_status = "verified_healthy"
+            metric_check_msg = (
+                f"Closed-loop telemetry verification PASSED: "
+                f"CPU={latest_metric.cpu_percent:.1f}%, "
+                f"Latency={latest_metric.latency_p95_ms:.0f}ms, "
+                f"Errors={latest_metric.error_rate_percent:.2f}%"
+            )
+        else:
+            verification_status = "verifying"
+            metric_check_msg = (
+                f"Post-action telemetry monitoring: "
+                f"CPU={latest_metric.cpu_percent:.1f}%, "
+                f"Latency={latest_metric.latency_p95_ms:.0f}ms, "
+                f"Errors={latest_metric.error_rate_percent:.2f}% (converging)"
+            )
 
     execution_logs = [
         f"[{now.strftime('%H:%M:%S')}] Human operator '{payload.approver}' approved action '{payload.action_title}'",
@@ -142,7 +200,7 @@ def approve_remediation(
         f"[{now.strftime('%H:%M:%S')}] Signal dispatched to container runtime orchestrator",
         f"[{now.strftime('%H:%M:%S')}] Clearing active compute load and resource saturation",
         f"[{now.strftime('%H:%M:%S')}] Telemetry health verification initiated (closed-loop MTTR tracking)",
-        f"[{now.strftime('%H:%M:%S')}] Service returned HTTP 200 OK. Incident marked resolving."
+        f"[{now.strftime('%H:%M:%S')}] {metric_check_msg}"
     ]
 
     audit_entry = RemediationAudit(
@@ -154,11 +212,11 @@ def approve_remediation(
         target_service=payload.target_service,
         action_type=payload.action_type,
         approver=payload.approver or "SRE On-Call Operator",
-        status="completed",
+        status="completed" if verification_status == "verified_healthy" else "executing",
         decision_comment=payload.decision_comment or "Operator telemetry verification complete",
         created_at=now,
         executed_at=now,
-        verification_status="verified_healthy",
+        verification_status=verification_status,
         execution_logs=execution_logs
     )
 

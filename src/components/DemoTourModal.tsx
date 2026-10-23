@@ -67,7 +67,7 @@ const TOUR_STEPS: TourStep[] = [
   {
     id: 4,
     title: '4. Explainable 5-Factor RCA & AI Diagnosis',
-    subtitle: 'Multi-Source Correlation & Grounded Gemini Synthesis',
+    subtitle: 'Multi-Source Correlation & Evidence-Grounded AI Synthesis',
     narrative:
       'The Structured RCA Engine calculates mathematical scores across 5 factors: Metric Anomaly (30%), Centrality (20%), Temporal Precedence (20%), Error Specificity (15%), and Signature Match (15%). Ranked candidate #1 is identified as Payment Service with 95% confidence.',
     sreActionLabel: 'Review RCA Ranking & AI Diagnosis',

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Zap,
@@ -8,6 +8,8 @@ import {
   Cpu,
   Globe,
   Radio,
+  ServerCrash,
+  Layers,
 } from 'lucide-react';
 import { ScenarioType } from '../types';
 
@@ -27,6 +29,12 @@ export const FaultSandboxModal: React.FC<FaultSandboxModalProps> = ({
   onResetNominal,
 }) => {
   const [selectedScenario, setSelectedScenario] = useState<ScenarioType>(currentScenario);
+
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedScenario(currentScenario);
+    }
+  }, [isOpen, currentScenario]);
 
   if (!isOpen) return null;
 
@@ -78,6 +86,26 @@ export const FaultSandboxModal: React.FC<FaultSandboxModalProps> = ({
       icon: Globe,
       symptoms: ['Outbound HTTP latency > 3,200ms', 'HTTP 502/504 error burst', 'Thread pool exhaustion'],
       cascadeEffect: 'Immediate failure of checkout workflows across customer sessions.',
+    },
+    {
+      id: 'service_crash',
+      title: 'Service Crash / Process Failure',
+      service: 'Payment Service',
+      description:
+        'Payment Service process terminates unexpectedly with exit code 139 (SIGSEGV). Container restart count increments, while downstream callers experience 503 Service Unavailable errors.',
+      icon: ServerCrash,
+      symptoms: ['Process state: Crashed', 'Container restart count: 3+', 'Error rate hits 100% on target', 'Order Service HTTP 503 errors (48%)'],
+      cascadeEffect: 'Order Service checkout flow fails with 503 Bad Gateway due to dead downstream payment dependency.',
+    },
+    {
+      id: 'dependency_cascade',
+      title: 'Dependency Cascade',
+      service: 'Order Service (Origin)',
+      description:
+        'Order Service suffers upstream thread pool exhaustion and queue saturation at T+0s, initiating an unthrottled retry storm that cascades across Payment, Inventory, and Notification services.',
+      icon: Layers,
+      symptoms: ['Order queue backlog > 500 (T+0s)', 'Payment retry latency > 1,600ms', 'Inventory lock timeouts > 1,400ms', '4 services anomalous'],
+      cascadeEffect: 'Unthrottled retry storm cascades across 4 services, causing cluster-wide latency and timeout degradation.',
     },
     {
       id: 'normal',

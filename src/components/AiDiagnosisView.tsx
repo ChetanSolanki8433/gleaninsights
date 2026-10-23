@@ -69,7 +69,7 @@ export const AiDiagnosisView: React.FC<AiDiagnosisViewProps> = ({
               <span>Evidence-Grounded Causal Synthesis</span>
               <span className="text-[10px] uppercase font-mono px-2.5 py-0.5 rounded-full bg-[#e3dacc] text-[#141413] border border-[#cccbc8] font-medium flex items-center gap-1">
                 <Lock className="w-3 h-3 text-[#87867f]" />
-                Zero Cloud LLMs · Fully Native
+                Fully Offline · Native ML
               </span>
             </h2>
             <p className="text-xs text-[#87867f] font-sans">

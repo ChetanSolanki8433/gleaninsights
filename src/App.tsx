@@ -11,25 +11,25 @@ import { RemediationView } from './components/RemediationView';
 import { IncidentHistoryView } from './components/IncidentHistoryView';
 import { ServicesView } from './components/ServicesView';
 import { FaultSandboxModal } from './components/FaultSandboxModal';
-import { simulationManager } from './services/simulationStore';
+import { dataSource } from './services/dataSource';
 import { SimulationState } from './services/rcaEngine';
 import { ScenarioType } from './types';
 
 export default function App() {
-  const [state, setState] = useState<SimulationState>(simulationManager.getState());
+  const [state, setState] = useState<SimulationState>(dataSource.getState());
   const [activeTab, setActiveTab] = useState<string>('overview');
   const [isSandboxOpen, setIsSandboxOpen] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<{ title: string; desc: string; type: 'alert' | 'success' } | null>(null);
 
   useEffect(() => {
-    const unsubscribe = simulationManager.subscribe((newState) => {
+    const unsubscribe = dataSource.subscribe((newState) => {
       setState(newState);
     });
     return () => unsubscribe();
   }, []);
 
   const handleInjectFault = (scenario: ScenarioType) => {
-    simulationManager.setScenario(scenario);
+    dataSource.setScenario(scenario);
     setToastMessage({
       title: 'Failure Injected',
       desc: `Simulated failure (${scenario}) activated. ML anomaly pipeline and RCA engine engaged.`,
@@ -39,7 +39,7 @@ export default function App() {
   };
 
   const handleResetNominal = () => {
-    simulationManager.resetToNominal();
+    dataSource.resetToNominal();
     setToastMessage({
       title: 'Nominal Baseline Restored',
       desc: 'All 5 microservices recovered. Anomaly scores and latency returned to baseline bands.',
@@ -49,7 +49,7 @@ export default function App() {
   };
 
   const handleApproveRemediation = (id: string, approver = 'SRE On-Call Lead') => {
-    simulationManager.approveRemediation(id, approver);
+    dataSource.approveRemediation(id, approver);
     setToastMessage({
       title: 'Recovery Playbook Initiated',
       desc: 'Automated remediation executing. Telemetric verification in progress...',
@@ -59,7 +59,7 @@ export default function App() {
   };
 
   const handleRejectRemediation = (id: string, reason: string) => {
-    simulationManager.rejectRemediation(id, reason);
+    dataSource.rejectRemediation(id, reason);
   };
 
   return (
@@ -72,7 +72,7 @@ export default function App() {
         onTabChange={setActiveTab}
         onOpenFaultModal={() => setIsSandboxOpen(true)}
         onOpenSandbox={() => setIsSandboxOpen(true)}
-        onToggleSimulation={() => simulationManager.toggleRunning()}
+        onToggleSimulation={() => dataSource.toggleRunning()}
         onResetSimulation={handleResetNominal}
       />
 

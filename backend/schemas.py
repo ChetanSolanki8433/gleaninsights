@@ -14,6 +14,7 @@ class TelemetryMetricBase(BaseModel):
     db_query_latency_ms: float = Field(default=0.0, ge=0.0)
     db_connections: int = Field(default=0, ge=0)
     queue_backlog: int = Field(default=0, ge=0)
+    restart_count: Optional[int] = Field(default=0, ge=0)
     source: Optional[str] = "collector"
 
 class TelemetryMetricCreate(TelemetryMetricBase):

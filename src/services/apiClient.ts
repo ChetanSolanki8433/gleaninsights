@@ -43,7 +43,7 @@ export interface HealthStatus {
 }
 
 class ApiClient {
-  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  public async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const res = await fetch(endpoint, {
       ...options,
       headers: {
@@ -180,7 +180,7 @@ class ApiClient {
           'External third-party API dependencies are evaluated via client-side gateway response latency probes.',
         ],
         generatedAt: new Date().toISOString(),
-        modelUsed: 'Local Deterministic Evidence-Grounded Engine (Zero Cloud LLMs)',
+        modelUsed: 'Local Deterministic Evidence-Grounded Engine (Fully Offline)',
       };
     }
   }
@@ -235,6 +235,17 @@ class ApiClient {
     return this.request(`${API_BASE}/faults/reset`, {
       method: 'POST',
     });
+  }
+
+  // --- Evaluation & Benchmark Harness ---
+  async runEvaluationSuite(): Promise<any> {
+    return this.request(`${API_BASE}/evaluation/run`, {
+      method: 'POST',
+    });
+  }
+
+  async getEvaluationReport(): Promise<any> {
+    return this.request(`${API_BASE}/evaluation/report`);
   }
 }
 

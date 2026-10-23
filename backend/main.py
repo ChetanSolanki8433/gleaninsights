@@ -1,18 +1,19 @@
 import os
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Counter, Gauge
+from sqlalchemy.orm import Session
 
-from backend.database import init_db
-from backend.routers import metrics, logs, anomalies, rca, remediation
+from backend.database import init_db, get_db
+from backend.routers import metrics, logs, anomalies, rca, remediation, simulation, incidents, evaluation
 from backend.collectors.system_collector import system_collector
 
 # Initialize DB tables
 init_db()
 
 app = FastAPI(
-    title="AIOps Microservice Observability & RCA Engine",
+    title="Glean Insights",
     description="Native, fully offline ML anomaly detection, 5-factor deterministic RCA, and human-approved remediation platform.",
     version="2.0.0"
 )
@@ -32,11 +33,20 @@ app.include_router(logs.router)
 app.include_router(anomalies.router)
 app.include_router(rca.router)
 app.include_router(remediation.router)
+app.include_router(simulation.router)
+app.include_router(incidents.router)
+app.include_router(evaluation.router)
 
 # Prometheus Metrics instrumentation
 HTTP_REQUESTS_TOTAL = Counter("aiops_http_requests_total", "Total HTTP requests received", ["method", "endpoint"])
 SYSTEM_CPU_GAUGE = Gauge("aiops_system_cpu_percent", "Current Host CPU utilization")
 SYSTEM_MEM_GAUGE = Gauge("aiops_system_memory_mb", "Current Host RAM utilization in MB")
+
+@app.on_event("startup")
+def startup_event():
+    # auto-start the simulation in nominal mode
+    from backend.routers.simulation import auto_start_simulation
+    auto_start_simulation()
 
 @app.middleware("http")
 async def monitor_requests(request: Request, call_next):
@@ -62,7 +72,7 @@ def health_check():
         "ml_engines": {
             "anomaly_detector": "Scikit-Learn IsolationForest + PyTorch Autoencoder",
             "rca_engine": "Deterministic 5-Factor Mathematical Correlation (R-Score)",
-            "ai_explainer": "Local Evidence-Grounded Synthesis Engine (Zero Cloud LLM)"
+            "ai_explainer": "Local Evidence-Grounded Synthesis Engine"
         },
         "database": "SQLAlchemy SQLite / PostgreSQL",
         "collector": "psutil native system telemetry + Prometheus scraper",
@@ -93,9 +103,9 @@ def reset_faults():
 
 # Direct alias for frontend explanation endpoint
 @app.post("/api/v1/ai/explain-incident")
-def explain_incident_alias(payload: dict):
+def explain_incident_alias(payload: dict, db: Session = Depends(get_db)):
     from backend.routers.rca import explain_incident
-    return explain_incident(payload=payload, db=None)
+    return explain_incident(payload=payload, db=db)
 
 if __name__ == "__main__":
     import uvicorn
